@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = "*"
+boto3 = "*"
+
+[dev-packages]
+pytest = "*"
+moto = {extras = ["dynamodb", "sns"], version = "*"}
+requests-mock = "*"
+pip-tools = "*"
+pip-audit = "*"
+
+[requires]
+python_version = "3.12"
+python_full_version = "3.12.0"

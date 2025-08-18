@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Love SMS Mondays - fetch phrase from public API -> save to DynamoDB -> SMS via SNS
+
+Parameters:
+  PhoneNumber:
+    Type: String
+    Description: E.164 phone number (e.g. +19045551234)
+  TimeZone:
+    Type: String
+    Default: America/New_York
+  CronAt7amMonday:
+    Type: String
+    Default: cron(0 7 ? * MON *)
+    Description: 7:00 AM every Monday (see TimeZone below)
+  ArtifactBucket:
+    Type: String
+    Description: S3 bucket where Jenkins uploads the Lambda zip
+  ArtifactKey:
+    Type: String
+    Description: S3 key for the Lambda zip (e.g., builds/love-sms.zip)
+  ApiUrl:
+    Type: String
+    Default: https://api.quotable.io/random
+    Description: Public API endpoint that returns a random quote
+  ApiKeyParameterName:
+    Type: String
+    Default: ""
+    Description: (Optional) SSM Parameter name that holds the API key
+  EnvSuffix:
+    Type: String
+    Default: ""
+    Description: Short suffix for per-PR stacks (e.g., pr-123). Leave empty for main.
+
+Conditions:
+  IsMain: !Equals [ !Ref EnvSuffix, "" ]
+  UseApiKey: !Not [ !Equals [ !Ref ApiKeyParameterName, "" ] ]
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !If
+        - IsMain
+        - /aws/lambda/love-sms
+        - !Sub "/aws/lambda/love-sms-${EnvSuffix}"
+      RetentionInDays: 7
+
+  PhrasesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TableName: !If
+        - IsMain
+        - love-phrases
+        - !Sub "love-phrases-${EnvSuffix}"
+
+  LoveFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LogsAndSns
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents ]
+                Resource: "arn:aws:logs:*:*:*"
+              - Effect: Allow
+                Action: [ sns:Publish ]
+                Resource: "*"  # SMS publish by PhoneNumber isn't resource-scoped
+        - PolicyName: DynamoReadWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ dynamodb:PutItem, dynamodb:Scan, dynamodb:GetItem ]
+                Resource: !GetAtt PhrasesTable.Arn
+        - !If
+          - UseApiKey
+          - PolicyName: ReadApiKeyParam
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: [ ssm:GetParameter ]
+                  Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ApiKeyParameterName}"
+          - !Ref "AWS::NoValue"
+
+  LoveFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !If [IsMain, "love-sms", !Sub "love-sms-${EnvSuffix}"]
+      Runtime: python3.11
+      Handler: app.handler
+      Role: !GetAtt LoveFunctionRole.Arn
+      Timeout: 15
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref ArtifactKey
+      Environment:
+        Variables:
+          PHONE_NUMBER: !Ref PhoneNumber
+          PHRASES_TABLE: !Ref PhrasesTable
+          API_URL: !Ref ApiUrl
+          API_KEY_PARAM: !Ref ApiKeyParameterName
+
+  SchedulerInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ lambda:InvokeFunction ]
+                Resource: !GetAtt LoveFunction.Arn
+
+  WeeklySchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !If
+        - IsMain
+        - love-sms-mondays
+        - !Sub "love-sms-mondays-${EnvSuffix}"
+      ScheduleExpression: !Ref CronAt7amMonday
+      ScheduleExpressionTimezone: !Ref TimeZone
+      FlexibleTimeWindow: { Mode: OFF }
+      Target:
+        Arn: !GetAtt LoveFunction.Arn
+        RoleArn: !GetAtt SchedulerInvokeRole.Arn
+        Input: '{"reason":"weekly-love-sms"}'
+
+Outputs:
+  LambdaName:
+    Value: !Ref LoveFunction
+  TableName:
+    Value: !Ref PhrasesTable
+  ScheduleName:
+    Value: !Ref WeeklySchedule
