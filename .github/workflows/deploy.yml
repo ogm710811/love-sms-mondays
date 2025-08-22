@@ -1,0 +1,155 @@
+name: Deploy Love SMS Mondays
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Allows manual triggering with environment selection
+
+permissions:
+  id-token: write  # Required for OIDC authentication
+  contents: read   # Required to check out code
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pipenv'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pipenv
+          pipenv install --dev
+
+      - name: Lint with flake8
+        run: |
+          pipenv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Run tests with coverage
+        run: |
+          pipenv run pytest --cov=. --cov-report=xml
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  validate-template:
+    name: Validate CloudFormation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install cfn-lint
+        run: pip install cfn-lint
+
+      - name: Validate CloudFormation template
+        run: cfn-lint template.yaml
+
+  build-and-deploy:
+    name: Build & Deploy
+    needs: [lint-and-test, validate-template]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production  # Enables environment-specific secrets & approvals
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pipenv
+          pipenv requirements > requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}  # Use OIDC for secure authentication
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Create deployment package
+        run: |
+          mkdir -p dist
+          cp src/app.py requirements.txt dist/
+          cd dist && zip -r ../love-sms.zip .
+
+      - name: Upload to S3
+        run: |
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          S3_KEY="deployments/love-sms-${TIMESTAMP}.zip"
+          aws s3 cp love-sms.zip "s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY}"
+          echo "S3_KEY=${S3_KEY}" >> $GITHUB_ENV
+
+      - name: Deploy CloudFormation stack
+        run: |
+          aws cloudformation deploy \
+            --template-file template.yaml \
+            --stack-name love-sms-mondays \
+            --parameter-overrides \
+              PhoneNumber=${{ secrets.PHONE_NUMBER }} \
+              ArtifactBucket=${{ secrets.ARTIFACT_BUCKET }} \
+              ArtifactKey=${{ env.S3_KEY }} \
+              TimeZone=${{ secrets.TIME_ZONE || 'America/New_York' }} \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Test deployment
+        run: |
+          # Extract the Lambda function name from CloudFormation stack
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name love-sms-mondays \
+            --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionName'].OutputValue" \
+            --output text)
+          
+          # Invoke Lambda with test event (optional - set to DRY_RUN to prevent SMS sending)
+          aws lambda invoke \
+            --function-name $FUNCTION_NAME \
+            --payload '{"test": true, "dry_run": true}' \
+            response.json
+          
+          # Check for errors in response
+          if grep -q "errorMessage" response.json; then
+            echo "Lambda invocation test failed:"
+            cat response.json
+            exit 1
+          else
+            echo "Lambda invocation test succeeded"
+          fi
+
+      - name: Add deployment tag
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/deploy-${{ github.run_number }}',
+              sha: context.sha
+            })

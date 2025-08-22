@@ -1,5 +1,4 @@
-import os, json
-import pytest
+import os
 from moto import mock_aws
 import boto3, requests_mock
 import logging
@@ -22,7 +21,7 @@ def test_handler_sends_message_and_saves_phrase():
         BillingMode="PAY_PER_REQUEST"
     )
 
-    from app import handler
+    from src.app import handler
 
     # Mock API response
     with requests_mock.Mocker() as mock_request:

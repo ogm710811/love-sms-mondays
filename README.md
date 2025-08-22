@@ -1,63 +1,45 @@
 # Love SMS Mondays
 
-A serverless application that sends love messages or inspirational quotes via SMS every Monday morning.
+A serverless application that sends a love message or inspirational quote via SMS every Monday morning to brighten someone's day.
 
 ## Overview
 
-Love SMS Mondays is a simple yet thoughtful AWS serverless application that:
+Love SMS Mondays is an AWS Lambda-based application that:
 
-1. Fetches a random quote or phrase from a public API
-2. Stores it in a DynamoDB table for future reference
-3. Sends it as an SMS message to a configured phone number
-4. Runs automatically every Monday at 7:00 AM (configurable)
+1. Fetches an inspirational quote from a public API
+2. Saves the quote to a DynamoDB table
+3. Sends the quote as an SMS message to a configured phone number
+4. Runs automatically every Monday at 7 AM (configurable timezone)
 
-If the API call fails, the application will fall back to either:
-1. A previously stored quote from DynamoDB
-2. A hardcoded fallback message
-
-## Features
-
-- **Reliability**: Multiple fallback mechanisms ensure a message is always sent
-- **Flexibility**: Works with various quote APIs (see Supported APIs below)
-- **Persistence**: Stores quotes in DynamoDB for future reference and fallback
-- **Scheduling**: Configurable timing using EventBridge Scheduler
-- **Security**: Optional API key support via AWS Parameter Store
-- **CI/CD**: Includes Jenkins pipeline for automated deployment
-- **Testing**: Comprehensive test suite using pytest and moto
-
-## Supported Quote APIs
-
-The application works with various quote APIs out of the box, including:
-
-1. **Quotable API** (default): https://api.quotable.io/random
-2. **ZenQuotes API**: https://zenquotes.io/api/random
-
-The application can be easily adapted to work with other APIs by adjusting the response parsing in the `fetch_phrase` function.
+If the API fetch fails, the application falls back to previously stored quotes or default love messages.
 
 ## Architecture
 
 The application uses several AWS services:
-- **AWS Lambda**: Runs the core application logic
-- **Amazon DynamoDB**: Stores fetched phrases for future use
-- **Amazon SNS**: Sends SMS messages
-- **AWS Systems Manager Parameter Store**: Optionally stores API keys
-- **Amazon EventBridge Scheduler**: Triggers the Lambda function on schedule
+
+- **AWS Lambda**: Runs the Python code that fetches quotes and sends messages
+- **Amazon DynamoDB**: Stores fetched quotes for future use
+- **Amazon SNS**: Sends SMS messages to the configured phone number
+- **AWS EventBridge Scheduler**: Triggers the Lambda function on a schedule
+- **AWS Systems Manager Parameter Store**: (Optional) Stores API keys securely
 
 ## Prerequisites
 
 - AWS Account
 - Python 3.12
-- AWS CLI configured with appropriate permissions
-- Pipenv for dependency management
-- A phone number that can receive SMS messages
+- [AWS CLI](https://aws.amazon.com/cli/) configured with appropriate permissions
+- [Pipenv](https://pipenv.pypa.io/en/latest/) (for dependency management)
+- [Git](https://git-scm.com/) (for version control)
 
-## Setup and Deployment
+For CI/CD with GitHub Actions:
+- GitHub repository with Actions enabled
+- AWS IAM role with appropriate permissions for OIDC authentication
 
-### Local Development
+## Installation
 
-1. Clone the repository:
+1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/love-sms-mondays.git
+   git clone <repository-url>
    cd love-sms-mondays
    ```
 
@@ -66,117 +48,128 @@ The application uses several AWS services:
    pipenv install --dev
    ```
 
-3. Run tests:
+3. Deploy to AWS:
+
+   ### Option 1: Using GitHub Actions (Recommended)
+
+   Push your changes to the main branch, and the GitHub Actions workflow will automatically:
+   - Run linting and tests
+   - Validate the CloudFormation template
+   - Build and deploy the application to AWS
+
+   See `.github/workflows/deploy.yml` for the complete workflow configuration.
+
+   ### Option 2: Manual Deployment
+
    ```
-   pipenv run pytest
+   # Generate requirements.txt from Pipfile
+   pipenv requirements > requirements.txt
+
+   # Create a deployment package (zip file)
+   mkdir -p dist
+   cp src/app.py requirements.txt dist/
+   cd dist && zip -r ../love-sms.zip .
+
+   # Upload the Lambda code to an S3 bucket
+   aws s3 cp love-sms.zip s3://<your-bucket>/<path>/love-sms.zip
+
+   # Deploy the CloudFormation stack
+   aws cloudformation deploy \
+     --template-file template.yaml \
+     --stack-name love-sms-mondays \
+     --parameter-overrides \
+       PhoneNumber=+1XXXXXXXXXX \
+       ArtifactBucket=<your-bucket> \
+       ArtifactKey=<path>/love-sms.zip \
+       TimeZone=America/New_York \
+     --capabilities CAPABILITY_IAM
    ```
 
-### AWS Deployment
+## Configuration Parameters
 
-The project uses AWS CloudFormation/SAM for deployment. You'll need:
-
-1. An S3 bucket to store the Lambda deployment package
-2. The following parameters:
-   - PhoneNumber: E.164 format phone number (e.g., +19045551234)
-   - TimeZone: Your local timezone (default: America/New_York)
-   - ArtifactBucket: S3 bucket name for Lambda code
-   - ArtifactKey: S3 key for Lambda code
-   - ApiUrl: URL for the quotes API (default: https://api.quotable.io/random)
-   - ApiKeyParameterName: (Optional) SSM Parameter name for API key
-
-Deploy using CloudFormation:
-```
-# First, package the Lambda function
-# Generate requirements.txt from Pipfile
-pipenv requirements > requirements.txt
-# Install dependencies to a package directory
-pip install -r requirements.txt -t ./package
-cd package && zip -r ../love-sms.zip . && cd ..
-zip -g love-sms.zip app.py
-
-# Upload to S3
-aws s3 cp love-sms.zip s3://your-artifact-bucket/builds/love-sms.zip
-
-# Deploy CloudFormation stack
-aws cloudformation deploy \
-  --template-file template.yaml \
-  --stack-name love-sms-mondays \
-  --parameter-overrides \
-    PhoneNumber=+19045551234 \
-    ArtifactBucket=your-artifact-bucket \
-    ArtifactKey=builds/love-sms.zip \
-  --capabilities CAPABILITY_IAM
-```
-
-## Configuration
-
-The application can be configured through CloudFormation parameters:
+The CloudFormation template accepts the following parameters:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| PhoneNumber | E.164 phone number to receive SMS | Required |
+| PhoneNumber | E.164 phone number (e.g., +19045551234) | (Required) |
 | TimeZone | Timezone for the scheduler | America/New_York |
-| CronAt7amMonday | Cron expression for scheduling | cron(0 7 ? * MON *) |
-| ApiUrl | URL for the quotes API | https://api.quotable.io/random |
-| ApiKeyParameterName | SSM Parameter name for API key | "" (empty) |
+| CronAt7amMonday | Cron expression for the scheduler | cron(0 7 ? * MON *) |
+| ArtifactBucket | S3 bucket where GitHub Actions uploads the Lambda zip | (Required) |
+| ArtifactKey | S3 key for the Lambda zip | (Required) |
+| ApiUrl | Public API endpoint for quotes | https://api.quotable.io/random |
+| ApiKeyParameterName | (Optional) SSM Parameter name for API key | "" |
+| EnvSuffix | Suffix for PR-specific deployments | "" |
 
-## Testing
+## Supported Quote APIs
 
-The project uses pytest for testing. Tests mock AWS services using moto.
+The application is designed to work with various quote APIs, with built-in support for:
 
-Run tests with:
+- [Quotable](https://api.quotable.io/random)
+- [ZenQuotes](https://zenquotes.io/api/random)
+
+You can configure other APIs by setting the `ApiUrl` parameter and adjusting the response parsing in the code if needed.
+
+## Project Structure
+
+The project is organized as follows:
+
+- `src/` - Contains the application source code
+  - `app.py` - Main Lambda function code
+- `tests/` - Contains test files
+- `scripts/` - Contains utility scripts
+  - `local-invoke.sh` - Script for testing the Lambda function locally
+  - `deployment-test.sh` - Script for testing a deployed Lambda function
+- `.github/workflows/` - Contains GitHub Actions workflow definitions
+  - `deploy.yml` - CI/CD workflow for testing and deploying the application
+
+## Development
+
+### Local Testing
+
+Run tests with pytest:
 ```
 pipenv run pytest
 ```
 
-## CI/CD
+You can also use the provided script to test the Lambda function locally:
+```
+# On Linux/Mac
+chmod +x scripts/local-invoke.sh
+./scripts/local-invoke.sh
 
-The project includes a Jenkinsfile for CI/CD pipeline configuration. The pipeline:
-1. Builds the Lambda package
-2. Uploads the artifact to S3
-3. Deploys to AWS using CloudFormation
-4. Performs a smoke test by invoking the Lambda function once
+# On Windows (using Git Bash or similar)
+bash scripts/local-invoke.sh
 
-The Jenkinsfile expects the following environment variables/credentials:
-- `WIFE_PHONE_E164`: Jenkins credential for the recipient's phone number
-- `ARTIFACT_BUCKET`: S3 bucket for storing Lambda deployment packages
-- AWS credentials configured in the Jenkins environment
+# Note: The script adds the src/ directory to the Python path to import app.py
+```
 
-Note: While the project uses Pipenv for local development, the CI/CD pipeline expects a requirements.txt file. You can generate this file from Pipfile using `pipenv requirements > requirements.txt`.
+### Deployment Testing
+
+After deploying the application, you can test it using:
+```
+# On Linux/Mac
+chmod +x scripts/deployment-test.sh
+./scripts/deployment-test.sh
+
+# On Windows (using Git Bash or similar)
+bash scripts/deployment-test.sh
+```
+
+### Code Quality
+
+The project uses flake8 for linting. You can run it with:
+```
+pipenv run flake8
+```
+
+### Adding Custom Fallback Messages
+
+You can modify the `FALLBACKS` list in `src/app.py` to add your own custom fallback messages that will be used if both the API and DynamoDB fallbacks fail.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+[MIT License](LICENSE)
 
 ## Contributing
 
-Contributions are welcome! Here's how you can contribute:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please make sure to update tests as appropriate and follow the existing code style.
-
-## Troubleshooting
-
-### SMS Messages Not Being Sent
-
-1. **Check AWS SNS Permissions**: Ensure the Lambda function has proper permissions to send SMS via SNS.
-2. **Verify Phone Number Format**: The phone number must be in E.164 format (e.g., +19045551234).
-3. **Check CloudWatch Logs**: Review the Lambda function logs for error messages.
-4. **SMS Spending Limit**: AWS has a default spending limit for SMS. Check your AWS SNS console to ensure you haven't reached the limit.
-
-### API Integration Issues
-
-1. **API Endpoint Availability**: Verify the API endpoint is accessible by testing it directly.
-2. **API Key Configuration**: If using an API key, ensure it's correctly stored in SSM Parameter Store.
-3. **Response Format Changes**: If the API provider changes their response format, you may need to update the `fetch_phrase` function.
-
-### Deployment Issues
-
-1. **S3 Bucket Access**: Ensure your deployment has proper access to the S3 bucket specified in `ArtifactBucket`.
-2. **CloudFormation Permissions**: Verify that your AWS user/role has sufficient permissions to create all resources in the template.
-3. **Lambda Package Size**: If your dependencies grow too large, you might hit Lambda package size limits. Consider using Lambda Layers for large dependencies.
+Contributions are welcome! Please feel free to submit a Pull Request.

@@ -14,7 +14,7 @@ Parameters:
     Description: 7:00 AM every Monday (see TimeZone below)
   ArtifactBucket:
     Type: String
-    Description: S3 bucket where Jenkins uploads the Lambda zip
+    Description: S3 bucket where GitHub Actions uploads the Lambda zip
   ArtifactKey:
     Type: String
     Description: S3 key for the Lambda zip (e.g., builds/love-sms.zip)
@@ -103,7 +103,7 @@ Resources:
     Properties:
       FunctionName: !If [IsMain, "love-sms", !Sub "love-sms-${EnvSuffix}"]
       Runtime: python3.11
-      Handler: app.handler
+      Handler: src/app.handler
       Role: !GetAtt LoveFunctionRole.Arn
       Timeout: 15
       Code:
