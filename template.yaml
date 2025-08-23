@@ -102,7 +102,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !If [IsMain, "love-sms", !Sub "love-sms-${EnvSuffix}"]
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src/app.handler
       Role: !GetAtt LoveFunctionRole.Arn
       Timeout: 15
