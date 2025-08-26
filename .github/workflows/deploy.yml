@@ -82,6 +82,15 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set Environment Suffix Using PR Number
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            PR_NUMBER=$(jq --raw-output .number "${GITHUB_EVENT_PATH}")
+            echo "EnvSuffix=pr-${PR_NUMBER}" >> $GITHUB_ENV
+          else
+            echo "EnvSuffix=" >> $GITHUB_ENV
+          fi
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -98,20 +107,25 @@ jobs:
         run: |
           mkdir -p dist
           cp src/app.py requirements.txt dist/
-          cd dist && zip -r ../love-sms.zip .
+          cd dist && zip -r ../love-sms-${{ env.EnvSuffix }}.zip .
 
       - name: Upload to S3
         run: |
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          S3_KEY="deployments/love-sms-${TIMESTAMP}.zip"
-          aws s3 cp love-sms.zip "s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY}"
+          S3_KEY="deployments/love-sms-${{ env.EnvSuffix }}-${TIMESTAMP}.zip"
+          aws s3 cp love-sms-${{ env.EnvSuffix }}.zip "s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY}"
           echo "S3_KEY=${S3_KEY}" >> $GITHUB_ENV
 
       - name: Deploy CloudFormation stack
         run: |
+          STACK_NAME="love-sms-mondays"
+          if [ ! -z "${{ env.EnvSuffix }}" ]; then
+            STACK_NAME="love-sms-mondays-${{ env.EnvSuffix }}"
+          fi
+    
           aws cloudformation deploy \
             --template-file template.yaml \
-            --stack-name love-sms-mondays \
+            --stack-name ${STACK_NAME}  \
             --parameter-overrides \
               PhoneNumber=${{ secrets.PHONE_NUMBER }} \
               ArtifactBucket=${{ secrets.ARTIFACT_BUCKET }} \
@@ -122,9 +136,14 @@ jobs:
 
       - name: Test deployment
         run: |
+          STACK_NAME="love-sms-mondays"
+          if [ ! -z "${{ env.EnvSuffix }}" ]; then
+            STACK_NAME="love-sms-mondays-${{ env.EnvSuffix }}"
+          fi
+          
           # Extract the Lambda function name from CloudFormation stack
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
-            --stack-name love-sms-mondays \
+            --stack-name ${STACK_NAME} \
             --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionName'].OutputValue" \
             --output text)
           

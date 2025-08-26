@@ -44,7 +44,7 @@ Resources:
 Parameters:
   GitHubRepository:
     Type: String
-    Default: your-username/love-sms-mondays
+    Default: ogm710811/love-sms-mondays
     Description: GitHub repository in format username/repository
 
 Outputs:
