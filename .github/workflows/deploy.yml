@@ -69,7 +69,7 @@ jobs:
   build-and-deploy:
     name: Build & Deploy
     needs: [lint-and-test, validate-template]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production  # Enables environment-specific secrets & approvals
 
@@ -131,6 +131,7 @@ jobs:
               ArtifactBucket=${{ secrets.ARTIFACT_BUCKET }} \
               ArtifactKey=${{ env.S3_KEY }} \
               TimeZone=${{ secrets.TIME_ZONE || 'America/New_York' }} \
+              EnvSuffix=${{ env.EnvSuffix }} \
             --capabilities CAPABILITY_IAM \
             --no-fail-on-empty-changeset
 
