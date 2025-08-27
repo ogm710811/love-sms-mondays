@@ -36,15 +36,6 @@ Conditions:
   UseApiKey: !Not [ !Equals [ !Ref ApiKeyParameterName, "" ] ]
 
 Resources:
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !If
-        - IsMain
-        - /aws/lambda/love-sms
-        - !Sub "/aws/lambda/love-sms-${EnvSuffix}"
-      RetentionInDays: 7
-
   PhrasesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -100,7 +91,6 @@ Resources:
 
   LoveFunction:
     Type: AWS::Lambda::Function
-    DependsOn: LogGroup
     Properties:
       FunctionName: !If [IsMain, "love-sms", !Sub "love-sms-${EnvSuffix}"]
       Runtime: python3.12
@@ -116,6 +106,15 @@ Resources:
           PHRASES_TABLE: !Ref PhrasesTable
           API_URL: !Ref ApiUrl
           API_KEY_PARAM: !Ref ApiKeyParameterName
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !If
+        - IsMain
+        - /aws/lambda/love-sms
+        - !Sub "/aws/lambda/love-sms-${EnvSuffix}"
+      RetentionInDays: 7
 
   SchedulerInvokeRole:
     Type: AWS::IAM::Role
