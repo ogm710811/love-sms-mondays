@@ -145,7 +145,7 @@ jobs:
           # Extract the Lambda function name from CloudFormation stack
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
             --stack-name ${STACK_NAME} \
-            --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionName'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='LambdaName'].OutputValue" \
             --output text)
           
           # Invoke Lambda with test event (optional - set to DRY_RUN to prevent SMS sending)
