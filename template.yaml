@@ -100,6 +100,7 @@ Resources:
 
   LoveFunction:
     Type: AWS::Lambda::Function
+    DependsOn: LogGroup
     Properties:
       FunctionName: !If [IsMain, "love-sms", !Sub "love-sms-${EnvSuffix}"]
       Runtime: python3.12
