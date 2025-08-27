@@ -13,7 +13,7 @@ def test_handler_sends_message_and_saves_phrase():
 
 
     # Mock DynamoDB client
-    ddb = boto3.client("dynamodb", region_name="us-east-2")
+    ddb = boto3.client("dynamodb", region_name="us-east-1")
     ddb.create_table(
         TableName="love-phrases",
         KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
