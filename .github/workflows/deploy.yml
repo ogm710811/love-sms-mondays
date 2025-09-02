@@ -107,6 +107,7 @@ jobs:
         run: |
           mkdir -p dist
           cp src/app.py requirements.txt dist/
+          pip install -r requirements.txt -t dist/
           cd dist && zip -r ../love-sms-${{ env.EnvSuffix }}.zip .
 
       - name: Upload to S3
