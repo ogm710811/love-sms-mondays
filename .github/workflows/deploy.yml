@@ -151,8 +151,10 @@ jobs:
           # Invoke Lambda with test event (optional - set to DRY_RUN to prevent SMS sending)
           aws lambda invoke \
             --function-name $FUNCTION_NAME \
+            --cli-binary-format raw-in-base64-out \
             --payload '{"test": true, "dry_run": true}' \
             response.json
+        
           
           # Check for errors in response
           if grep -q "errorMessage" response.json; then

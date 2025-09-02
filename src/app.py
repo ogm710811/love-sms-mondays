@@ -140,6 +140,9 @@ def handler(event, context):
     api_url = os.environ.get("API_URL", "https://api.quotable.io/random")
     api_key_param = os.environ.get("API_KEY_PARAM", "")  # Optional SSM param name
 
+    # Check if this is a dry run to prevent sending actual SMS
+    dry_run = event.get('dry_run', False) or os.environ.get("DRY_RUN", "").lower() == "true"
+
     try:
         text, author = fetch_phrase(api_key_param, api_url)
         save_phrase(table_name, text, author)
@@ -154,5 +157,11 @@ def handler(event, context):
         else:
             msg = random.choice(FALLBACKS)
 
-    sns.publish(PhoneNumber=phone, Message=msg)
-    return {"statusCode": 200, "body": json.dumps({"sent": msg[:160]})}
+    # Only send SMS if not in dry run mode
+    if not dry_run:
+        sns.publish(PhoneNumber=phone, Message=msg)
+        log.info("SMS sent to %s", phone)
+    else:
+        log.info("DRY RUN - SMS would have been sent to %s with message: %s", phone, msg)
+
+    return {"statusCode": 200, "body": json.dumps({"sent": msg[:160], "dry_run": dry_run})}
