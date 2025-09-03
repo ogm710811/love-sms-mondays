@@ -14,7 +14,7 @@ Parameters:
     Description: 7:00 AM every Monday (see TimeZone below)
   ArtifactBucket:
     Type: String
-    Description: S3 bucket where Jenkins uploads the Lambda zip
+    Description: S3 bucket where GitHub Actions uploads the Lambda zip
   ArtifactKey:
     Type: String
     Description: S3 key for the Lambda zip (e.g., builds/love-sms.zip)
@@ -36,15 +36,6 @@ Conditions:
   UseApiKey: !Not [ !Equals [ !Ref ApiKeyParameterName, "" ] ]
 
 Resources:
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !If
-        - IsMain
-        - /aws/lambda/love-sms
-        - !Sub "/aws/lambda/love-sms-${EnvSuffix}"
-      RetentionInDays: 7
-
   PhrasesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -102,7 +93,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !If [IsMain, "love-sms", !Sub "love-sms-${EnvSuffix}"]
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: app.handler
       Role: !GetAtt LoveFunctionRole.Arn
       Timeout: 15
@@ -115,6 +106,15 @@ Resources:
           PHRASES_TABLE: !Ref PhrasesTable
           API_URL: !Ref ApiUrl
           API_KEY_PARAM: !Ref ApiKeyParameterName
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !If
+        - IsMain
+        - /aws/lambda/love-sms
+        - !Sub "/aws/lambda/love-sms-${EnvSuffix}"
+      RetentionInDays: 7
 
   SchedulerInvokeRole:
     Type: AWS::IAM::Role
@@ -143,7 +143,8 @@ Resources:
         - !Sub "love-sms-mondays-${EnvSuffix}"
       ScheduleExpression: !Ref CronAt7amMonday
       ScheduleExpressionTimezone: !Ref TimeZone
-      FlexibleTimeWindow: { Mode: OFF }
+      FlexibleTimeWindow:
+        Mode: "OFF"
       Target:
         Arn: !GetAtt LoveFunction.Arn
         RoleArn: !GetAtt SchedulerInvokeRole.Arn

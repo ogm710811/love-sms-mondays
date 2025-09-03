@@ -13,7 +13,9 @@ moto = {extras = ["dynamodb", "sns"], version = "*"}
 requests-mock = "*"
 pip-tools = "*"
 pip-audit = "*"
+flake8 = "*"
+pytest-cov = "*"
 
 [requires]
 python_version = "3.12"
-python_full_version = "3.12.0"
+#python_full_version = "3.12.0"
